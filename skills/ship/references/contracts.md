@@ -149,6 +149,24 @@ validate:
   - "uv run mypy src/"
   - "uv run pytest"
 
+# Model per phase (default shown)
+# Options: opus, sonnet, haiku
+models:
+  read: sonnet
+  plan: opus
+  execute: sonnet
+  stack: haiku
+  push: sonnet
+
+# Permission mode per phase (default shown)
+# Options: bypassPermissions, acceptEdits, auto, default
+modes:
+  read: bypassPermissions
+  plan: bypassPermissions
+  execute: bypassPermissions
+  stack: bypassPermissions
+  push: bypassPermissions
+
 # Project-level agents (optional — falls back to ship built-ins)
 agents:
   # Planners — list of available planners. First match wins.
@@ -159,12 +177,15 @@ agents:
 
   # Executors — list of available executors with capability descriptions.
   # The planner reads these and assigns the best fit per PR.
+  # Per-agent model override takes precedence over models.execute.
   # If omitted or empty, uses built-in ship-execute for all PRs.
   executors:
     - path: ".agents/backend-engineer.md"
       match: "Python, FastAPI, SQLAlchemy, Pydantic, scrapers, CLI tools"
+      model: sonnet
     - path: ".agents/infra-engineer.md"
       match: "Terraform, Docker, CI/CD, deployment, infrastructure"
+      model: haiku
     - path: ".agents/frontend-engineer.md"
       match: "React, TypeScript, UI components, styling"
 ```

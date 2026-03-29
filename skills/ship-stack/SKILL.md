@@ -1,6 +1,7 @@
 ---
 name: ship-stack
 description: "This skill should be used when the ship orchestrator needs to create or manage Graphite stacked branches during the shipping pipeline."
+allowed-tools: Bash(gt:*), Bash(git:*)
 ---
 
 # ship-stack — Graphite Branch Management

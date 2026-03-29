@@ -1,6 +1,7 @@
 ---
 name: ship-plan
 description: "This skill should be used as the fallback planner when the ship orchestrator cannot find a project-level planner. Breaks requirements into detailed stacked PR blueprints."
+allowed-tools: Read, Write, Glob, Grep
 ---
 
 # ship-plan — Fallback Planner

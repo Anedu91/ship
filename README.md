@@ -91,6 +91,19 @@ validate:
   - "uv run mypy src/"
   - "uv run pytest"
 
+# Model per phase (options: opus, sonnet, haiku)
+models:
+  read: sonnet        # lightweight parsing
+  plan: opus          # heavy thinking, architecture decisions
+  execute: sonnet     # mechanical, follow the blueprint
+  stack: haiku        # simple branch operations
+  push: sonnet        # template-based PR descriptions
+
+# Permission mode per phase (default: bypassPermissions)
+# Options: bypassPermissions, acceptEdits, auto, default
+modes:
+  execute: bypassPermissions
+
 # Project-level agents (optional)
 agents:
   # Single agent shorthand
@@ -98,11 +111,14 @@ agents:
   executor: ".agents/backend-engineer.md"
 
   # Or multiple agents with capability descriptions
+  # Per-agent model override takes precedence over models.execute
   executors:
     - path: ".agents/backend-engineer.md"
       match: "Python, FastAPI, SQLAlchemy, scrapers, CLI tools"
+      model: sonnet
     - path: ".agents/infra-engineer.md"
       match: "Terraform, Docker, CI/CD, deployment"
+      model: haiku
     - path: ".agents/frontend-engineer.md"
       match: "React, TypeScript, UI components"
 ```

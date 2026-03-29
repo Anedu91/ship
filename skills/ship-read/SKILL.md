@@ -1,6 +1,7 @@
 ---
 name: ship-read
 description: "This skill should be used when the ship orchestrator needs to parse requirements from GitHub issues, markdown files, or inline text into a structured ship-state.md file."
+allowed-tools: Read, Write, Glob, Grep, Bash(gh:*), Bash(cat:*)
 ---
 
 # ship-read — Parse Requirements

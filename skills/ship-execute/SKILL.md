@@ -1,6 +1,7 @@
 ---
 name: ship-execute
 description: "This skill should be used as the fallback executor when the ship orchestrator cannot find a project-level executor. Implements a single PR from a ship blueprint mechanically."
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(uv:*), Bash(npm:*), Bash(make:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*)
 ---
 
 # ship-execute — Fallback Executor

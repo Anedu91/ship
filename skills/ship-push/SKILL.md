@@ -1,6 +1,7 @@
 ---
 name: ship-push
 description: "This skill should be used when the ship orchestrator needs to push the completed PR stack to GitHub and create PR descriptions."
+allowed-tools: Read, Write, Bash(gt:*), Bash(gh:*), Bash(cat:*), Bash(rm:*)
 ---
 
 # ship-push — Push Stack & Create PRs

@@ -65,6 +65,28 @@ DISCOVER_PLANNER:
 
 Project-level agents receive the same inputs and must produce the same outputs as built-in skills. See `contracts.md` for exact schemas.
 
+## Subagent Architecture
+
+Each phase is spawned as a subagent via the Agent tool. This provides:
+
+1. **Model control** — use Opus for planning (heavy thinking), Sonnet for execution (mechanical), Haiku for stack ops (lightweight)
+2. **Permission bypass** — subagents run with `bypassPermissions` by default, eliminating approval prompts
+3. **Context isolation** — each phase gets its own context window, preventing overflow on large features
+
+The orchestrator spawns each phase with:
+- **model**: from `models.<phase>` config, or per-agent `model` override
+- **mode**: from `modes.<phase>` config
+
+### Model resolution for executors
+
+Per-agent model overrides take precedence:
+
+1. If the executor entry in `agents.executors` has a `model` field → use that
+2. Otherwise → use `models.execute` from config
+3. Otherwise → default `sonnet`
+
+This lets you run a simple infra agent on Haiku while a complex backend agent uses Sonnet.
+
 ## Stacked PRs Are Sequential
 
 Each PR branch is created from the previous PR's branch using Graphite. PR 2 depends on PR 1's code. There is no parallel execution of stacked PRs.
@@ -89,9 +111,19 @@ Both files are gitignored. If stale state files exist on startup, the orchestrat
 | `maxLinesPerPR` | 250 | Max lines changed per PR |
 | `branchPrefix` | `"ship/"` | Prefix for branch names |
 | `validate` | auto-detected | List of validation commands |
+| `models.read` | `sonnet` | Model for reading requirements |
+| `models.plan` | `opus` | Model for planning (heavy thinking) |
+| `models.execute` | `sonnet` | Default model for execution |
+| `models.stack` | `haiku` | Model for branch operations |
+| `models.push` | `sonnet` | Model for pushing PRs |
+| `modes.read` | `bypassPermissions` | Permission mode for reading |
+| `modes.plan` | `bypassPermissions` | Permission mode for planning |
+| `modes.execute` | `bypassPermissions` | Permission mode for execution |
+| `modes.stack` | `bypassPermissions` | Permission mode for branch ops |
+| `modes.push` | `bypassPermissions` | Permission mode for pushing |
 | `agents.planners` | built-in `ship-plan` | List of `{path, match}` planners |
 | `agents.planner` | — | Shorthand: single planner path |
-| `agents.executors` | built-in `ship-execute` | List of `{path, match}` executors |
+| `agents.executors` | built-in `ship-execute` | List of `{path, match, model}` executors |
 | `agents.executor` | — | Shorthand: single executor path |
 
 ## Writing Project-Level Agents
