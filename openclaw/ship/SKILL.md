@@ -14,10 +14,16 @@ You are an orchestrator. When triggered, you run a full development pipeline fro
 
 ## Setup
 
-The ship skill files live at a known location. At the start of every run, resolve the ship plugin root:
+The ship skill files are located via the `SHIP_ROOT` environment variable.
+
+At the start of every run, resolve it:
+
+1. Read `SHIP_ROOT` from the environment
+2. If not set, check `.ship.local.yaml` in the target repo for `shipRoot`
+3. If neither exists, report an error: "SHIP_ROOT not set. See .env.example in the ship repo."
 
 ```
-SHIP_ROOT = /home/anedu/Documents/programing/ship
+SHIP_ROOT = $SHIP_ROOT  # e.g. ~/Documents/programing/ship
 ```
 
 All skill references below are relative to `SHIP_ROOT/skills/`.
@@ -217,6 +223,6 @@ If `gh` is not available:
 | Subagents | `Agent` tool per phase | `sessions_spawn` for plan + execute only |
 | Lightweight phases | Subagent | Direct execution (read, stack, push) |
 | Model control | Per-subagent | Per `sessions_spawn` |
-| Plugin root | `${CLAUDE_PLUGIN_ROOT}` | Hardcoded `SHIP_ROOT` path |
+| Plugin root | `${CLAUDE_PLUGIN_ROOT}` | `SHIP_ROOT` env var |
 | Invocation | `/ship:ship <args>` | Conversational or explicit |
 | Progress | Silent until done | Reports each phase to user in chat |

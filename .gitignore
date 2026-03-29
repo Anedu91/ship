@@ -6,6 +6,10 @@ Thumbs.db
 ship-plan.md
 ship-state.md
 
+# Environment (machine-specific paths)
+.env
+.ship.local.yaml
+
 # IDE
 .vscode/
 .idea/
