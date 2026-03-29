@@ -1,159 +1,107 @@
 ---
 name: ship
-description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes with subagents, validates (mypy/ruff/tests), and pushes to GitHub with detailed PR descriptions."
+description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes each PR sequentially, validates, and pushes to GitHub. Invoke with /ship:ship <requirements>."
+argument-hint: <requirements — file path, GitHub issue URL, or inline text>
 ---
 
 # /ship — Autonomous Shipping Pipeline
 
-You are an autonomous shipping orchestrator. When invoked, you execute a full development pipeline from requirements to pushed PRs. You do NOT ask for confirmation between phases — you run the entire pipeline end-to-end.
+Orchestrate a full development pipeline from requirements to pushed PRs. Run the entire pipeline end-to-end without asking for confirmation between phases.
 
-## Input
+`$ARGUMENTS` is the requirements input (file path, GitHub issue URL, or inline text).
 
-`$ARGUMENTS` is either:
-- A path to a requirements file (markdown, yaml, or text)
-- A GitHub issue URL
-- Inline text describing what to build
+## Phase 0: Initialize
 
-## Pipeline
+1. Check for stale state files (`ship-state.md`, `ship-plan.md`) in the repo root. If found, ask whether to resume the previous run or start fresh. If starting fresh, delete them.
 
-### Phase 1: Read & Understand Requirements
+2. Load configuration from `.ship.yaml` in the repo root (if exists). Extract:
+   - `maxLinesPerPR` (default: 250)
+   - `branchPrefix` (default: `"ship/"`)
+   - `validate` (default: auto-detect)
+   - `agents.planner` (default: none)
+   - `agents.executor` (default: none)
 
-1. If `$ARGUMENTS` is a file path, read it completely
-2. If it's a GitHub issue URL, fetch the issue body and comments using `gh issue view <number> --json body,title,comments`
-3. Identify:
-   - **Goal**: what needs to be built
-   - **Constraints**: tech stack, patterns, conventions
-   - **Acceptance criteria**: how to know it's done
-   - **Existing code**: read relevant files in the repo to understand current architecture
+## Phase 1: Read Requirements
 
-### Phase 2: Plan Stacked PRs
+Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-read/SKILL.md` and follow its instructions with `$ARGUMENTS` as input.
 
-Break the work into **sequential, stacked PRs** where each PR:
-- Has **less than 250 lines of code changed** (hard limit)
-- Is a **complete, working increment** (tests pass independently)
-- Builds on top of the previous PR
-- Has a clear, single responsibility
+Result: `ship-state.md` exists in the repo root.
 
-Write the plan to `ship-plan.md` in the repo root with this structure:
+## Phase 2: Plan
 
-```markdown
-# Ship Plan
+Discover the planner:
 
-## Summary
-<one paragraph describing the full feature>
+1. If `.ship.yaml` defines `agents.planner` AND the file exists at that path in the repo:
+   → Read that file and follow its instructions.
+2. Otherwise:
+   → Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md` and follow its instructions.
 
-## Stack
+The planner reads `ship-state.md` and writes `ship-plan.md`.
 
-### PR 1: <title>
-- Branch: `ship/<short-name>`
-- Description: <what this PR does>
-- Files to create/modify: <list>
-- Estimated lines: <number>
+Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending`.
 
-### PR 2: <title>
-- Branch: `ship/<short-name>`
-- Description: <what this PR does>
-- Files to create/modify: <list>
-- Estimated lines: <number>
-- Depends on: PR 1
+**Validate the plan**: Verify `ship-plan.md` has a `## Stack` section and each PR has Branch, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
 
-...
-```
+## Phase 3: Execute Stack
 
-Rules for planning:
-- Prefer more small PRs over fewer large ones
-- Infrastructure/types/config first, then logic, then tests
-- Each PR must leave the codebase in a valid state
-- If a single logical change exceeds 250 lines, split it further
+For each PR in `ship-plan.md`, in order:
 
-### Phase 3: Execute Each PR
+### 3a. Create Branch
 
-For **each PR in the plan**, in order:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-stack/SKILL.md` and follow its instructions to create the graphite branch for this PR.
 
-1. Create a new graphite branch:
-   ```bash
-   gt create -am "feat: <PR title>"
-   ```
+### 3b. Execute PR
 
-2. Implement the changes described in the plan. Use subagents for parallel work if the PR touches independent files.
+Update the PR's status in `ship-plan.md` to `in-progress`.
 
-3. After implementation, run the project's validation suite. Look for these in order and run whichever exist:
-   - `pyproject.toml` → `uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest`
-   - `package.json` → `npm run lint && npm run typecheck && npm test`
-   - `Makefile` → `make check` or `make test`
-   - If none found, at minimum run any linter/formatter config detected
+Discover the executor:
 
-4. If validation fails:
-   - Fix the issues
-   - Re-run validation
-   - Repeat up to 3 times
-   - If still failing after 3 attempts, document the failures in the PR description and continue
+1. If `.ship.yaml` defines `agents.executor` AND the file exists at that path in the repo:
+   → Read that file and follow its instructions with this PR's blueprint.
+2. Otherwise:
+   → Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-execute/SKILL.md` and follow its instructions.
 
-5. Stage and commit all changes:
-   ```bash
-   git add -A
-   git commit --amend -m "feat: <PR title>"
-   ```
+Pass the executor:
+- The full PR section from `ship-plan.md` (everything under `### PR N: <title>`)
+- The Configuration section (validation commands)
 
-### Phase 4: Push & Create PRs
+Result: PR is implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
 
-After ALL PRs in the stack are implemented and validated:
+### 3c. Continue
 
-1. Push the entire stack to GitHub:
-   ```bash
-   gt submit --publish
-   ```
+If the PR failed, log the failure but continue to the next PR. Do not abort the stack.
 
-2. For each PR, ensure the GitHub PR body contains:
+Repeat 3a-3c for every PR in the plan.
 
-   ```markdown
-   ## What
-   <Clear description of what this PR does>
+## Phase 4: Push
 
-   ## Why
-   <Why this change is needed, referencing the original requirements>
+Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions.
 
-   ## How
-   <Brief explanation of the implementation approach>
+Result: Stack is pushed to GitHub. Each PR has a detailed description.
 
-   ## Changes
-   - <file>: <what changed and why>
-   - <file>: <what changed and why>
+## Phase 5: Report
 
-   ## Validation
-   - [ ] ruff check passes
-   - [ ] ruff format passes
-   - [ ] mypy passes
-   - [ ] tests pass
-
-   ## Stack
-   This is PR X/N in the stack for: <feature name>
-   ```
-
-### Phase 5: Report
-
-After all PRs are pushed, output a summary:
+Output a summary:
 
 ```
-## Ship Complete 🚀
+## Ship Complete
 
-Feature: <name>
+Feature: <name from plan Summary>
 PRs created: <count>
-Total lines changed: <number>
+Total lines changed: <sum of estimated lines>
 
 Stack:
-1. <PR title> — <github PR url> (<lines> lines)
-2. <PR title> — <github PR url> (<lines> lines)
+1. <PR title> — <GitHub PR URL> (<lines> lines) [<status>]
+2. <PR title> — <GitHub PR URL> (<lines> lines) [<status>]
 ...
 
-Validation: <all passed | X failures documented>
+Validation: <all passed | N failures documented>
 ```
 
-## Important Rules
+Clean up: delete `ship-state.md` and `ship-plan.md` from the repo root.
 
-- **Never exceed 250 lines per PR.** If you're about to, split further.
-- **Every PR must independently pass validation.** Don't break the stack.
-- **Use graphite (`gt`) for all branch operations.** Not raw git branching.
-- **Read the existing codebase first.** Match existing patterns, naming, and style.
-- **Don't modify files outside the plan** unless necessary for the PR to work.
-- **Clean up `ship-plan.md`** after successful completion (delete it).
+## Additional Resources
+
+For data contracts and schemas, consult:
+- **`references/contracts.md`** — ship-state.md and ship-plan.md schemas, project-level agent contract
+- **`references/pipeline-overview.md`** — full architecture, delegation logic, configuration reference, project-level agent authoring guide
