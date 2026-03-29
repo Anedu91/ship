@@ -19,8 +19,7 @@ The ship skill files are located via the `SHIP_ROOT` environment variable.
 At the start of every run, resolve it:
 
 1. Read `SHIP_ROOT` from the environment
-2. If not set, check `.ship.local.yaml` in the target repo for `shipRoot`
-3. If neither exists, report an error: "SHIP_ROOT not set. See .env.example in the ship repo."
+2. If not set, report an error: "SHIP_ROOT not set. See .env.example in the ship repo."
 
 ```
 SHIP_ROOT = $SHIP_ROOT  # e.g. ~/Documents/programing/ship

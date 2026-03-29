@@ -8,7 +8,6 @@ ship-state.md
 
 # Environment (machine-specific paths)
 .env
-.ship.local.yaml
 
 # IDE
 .vscode/
