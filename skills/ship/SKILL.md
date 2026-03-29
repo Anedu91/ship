@@ -18,8 +18,10 @@ Orchestrate a full development pipeline from requirements to pushed PRs. Run the
    - `maxLinesPerPR` (default: 250)
    - `branchPrefix` (default: `"ship/"`)
    - `validate` (default: auto-detect)
-   - `agents.planner` (default: none)
-   - `agents.executor` (default: none)
+   - `agents.planners` — list of `{path, match}` entries (or single `agents.planner` shorthand)
+   - `agents.executors` — list of `{path, match}` entries (or single `agents.executor` shorthand)
+
+   Normalize shorthand: if `agents.planner` is a string, treat as `[{path: <value>, match: "default"}]`. Same for `agents.executor`.
 
 ## Phase 1: Read Requirements
 
@@ -31,16 +33,20 @@ Result: `ship-state.md` exists in the repo root.
 
 Discover the planner:
 
-1. If `.ship.yaml` defines `agents.planner` AND the file exists at that path in the repo:
+1. If `agents.planners` has entries and the first matching file exists:
    → Read that file and follow its instructions.
 2. Otherwise:
    → Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md` and follow its instructions.
 
-The planner reads `ship-state.md` and writes `ship-plan.md`.
+**Pass to the planner:**
+- `ship-state.md` (requirements + repo context)
+- The list of available executors from `agents.executors` (each with `path` and `match` description). The planner uses this to assign an executor per PR.
 
-Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending`.
+The planner reads `ship-state.md` and writes `ship-plan.md`, including an `Executor:` field on each PR.
 
-**Validate the plan**: Verify `ship-plan.md` has a `## Stack` section and each PR has Branch, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
+Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending` and an `Executor:` assignment.
+
+**Validate the plan**: Verify `ship-plan.md` has a `## Stack` section and each PR has Branch, Executor, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
 
 ## Phase 3: Execute Stack
 
@@ -54,9 +60,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-stack/SKILL.md` and follow its instructi
 
 Update the PR's status in `ship-plan.md` to `in-progress`.
 
-Discover the executor:
+Discover the executor from the PR's `Executor:` field:
 
-1. If `.ship.yaml` defines `agents.executor` AND the file exists at that path in the repo:
+1. If `Executor:` is a path (not `"default"`) AND the file exists:
    → Read that file and follow its instructions with this PR's blueprint.
 2. Otherwise:
    → Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-execute/SKILL.md` and follow its instructions.

@@ -16,7 +16,7 @@ Ship is a thin orchestrator that delegates work to specialized skills. Planning 
   ├─ FOR EACH PR (sequential):
   │   ├─ ship-stack  (fixed)    → gt create <branch>
   │   ├─ executor    (dynamic)  → implement blueprint → validate → commit
-  │   │   ├─ project: .ship.yaml agents.executor path
+  │   │   ├─ planner-assigned: Executor field in PR blueprint
   │   │   └─ fallback: ship-execute skill
   │   └─ update ship-plan.md status
   │
@@ -27,16 +27,40 @@ Ship is a thin orchestrator that delegates work to specialized skills. Planning 
 
 ## Dynamic Delegation
 
-The orchestrator discovers project-level agents using this algorithm:
+### Multi-Agent Selection
+
+Projects can register multiple executors (and planners), each with a `match` description of its capabilities:
+
+```yaml
+agents:
+  executors:
+    - path: ".agents/backend-engineer.md"
+      match: "Python, FastAPI, SQLAlchemy, scrapers, CLI tools"
+    - path: ".agents/infra-engineer.md"
+      match: "Terraform, Docker, CI/CD, deployment"
+```
+
+**Selection flow:**
+
+1. The orchestrator reads all available agents from `.ship.yaml`
+2. The orchestrator passes the full list to the planner
+3. The planner assigns the best-fit executor per PR by matching the PR's work against `match` descriptions
+4. The planner writes the agent's `path` into each PR's `Executor:` field
+5. During execution, the orchestrator reads each PR's `Executor:` field and loads that agent
+
+Selection is based on what the agent **can do** (its `match` field), not its name. An agent named "backend-engineer" with `match: "Python, scrapers"` is the right pick for Python scraper work.
+
+If no executor matches or `Executor: default`, the built-in `ship-execute` skill is used.
+
+### Planner Discovery
 
 ```
-DISCOVER(role):
-  1. Read .ship.yaml from repo root
-  2. path = config.agents[role]
-  3. IF path is set AND file exists at that path:
-       → Read file, use its instructions for this phase
-  4. ELSE:
-       → Read ${CLAUDE_PLUGIN_ROOT}/skills/ship-<role>/SKILL.md
+DISCOVER_PLANNER:
+  1. Read agents.planners from .ship.yaml (or agents.planner shorthand)
+  2. IF entries exist AND first matching file exists:
+       → Read file, use its instructions
+  3. ELSE:
+       → Read ${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md
 ```
 
 Project-level agents receive the same inputs and must produce the same outputs as built-in skills. See `contracts.md` for exact schemas.
@@ -65,8 +89,10 @@ Both files are gitignored. If stale state files exist on startup, the orchestrat
 | `maxLinesPerPR` | 250 | Max lines changed per PR |
 | `branchPrefix` | `"ship/"` | Prefix for branch names |
 | `validate` | auto-detected | List of validation commands |
-| `agents.planner` | built-in `ship-plan` | Path to project-level planner |
-| `agents.executor` | built-in `ship-execute` | Path to project-level executor |
+| `agents.planners` | built-in `ship-plan` | List of `{path, match}` planners |
+| `agents.planner` | — | Shorthand: single planner path |
+| `agents.executors` | built-in `ship-execute` | List of `{path, match}` executors |
+| `agents.executor` | — | Shorthand: single executor path |
 
 ## Writing Project-Level Agents
 
@@ -81,6 +107,8 @@ A project-level planner is a markdown file with instructions for breaking work i
 
 The planner MUST:
 - Read `ship-state.md` for requirements and repo context
+- Read the available executors list provided by the orchestrator
+- Assign the best-fit executor per PR via the `Executor:` field
 - Write `ship-plan.md` following the exact schema in `contracts.md`
 - Provide method-level detail in file blueprints
 

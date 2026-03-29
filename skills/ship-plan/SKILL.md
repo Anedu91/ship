@@ -16,6 +16,21 @@ Read `.ship.yaml` from the repo root (if exists) for configuration overrides:
 - `branchPrefix` (default: `"ship/"`)
 - `validate` (default: auto-detected, already in ship-state.md)
 
+The orchestrator also provides a list of **available executors** from `.ship.yaml`:
+```
+Available executors:
+- path: ".agents/backend-engineer.md", match: "Python, FastAPI, scrapers, CLI tools"
+- path: ".agents/infra-engineer.md", match: "Terraform, Docker, CI/CD"
+```
+
+If no executors are provided, set `Executor: default` on all PRs.
+
+## Executor Assignment
+
+For each PR, assign the best-fit executor by matching the PR's work against the `match` descriptions. Selection is based on what the agent **can do**, not its name. A "backend-engineer" agent whose `match` includes "scrapers" is the right pick for scraper work.
+
+If no executor matches a PR's work, set `Executor: default` (uses built-in ship-execute).
+
 ## Planning Rules
 
 1. Each PR MUST have less than `maxLinesPerPR` lines changed (hard limit)
@@ -61,6 +76,6 @@ The blueprint must be detailed enough that an executor can implement mechanicall
 
 Write `ship-plan.md` to the repo root following the exact schema in `${CLAUDE_PLUGIN_ROOT}/skills/ship/references/contracts.md`.
 
-All PRs start with `Status: pending`.
+All PRs start with `Status: pending` and include an `Executor:` field.
 
 Do NOT begin implementation. The orchestrator handles phase transitions.

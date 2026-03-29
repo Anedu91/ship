@@ -93,8 +93,18 @@ validate:
 
 # Project-level agents (optional)
 agents:
+  # Single agent shorthand
   planner: ".ship/plan.md"
-  executor: ".ship/execute.md"
+  executor: ".agents/backend-engineer.md"
+
+  # Or multiple agents with capability descriptions
+  executors:
+    - path: ".agents/backend-engineer.md"
+      match: "Python, FastAPI, SQLAlchemy, scrapers, CLI tools"
+    - path: ".agents/infra-engineer.md"
+      match: "Terraform, Docker, CI/CD, deployment"
+    - path: ".agents/frontend-engineer.md"
+      match: "React, TypeScript, UI components"
 ```
 
 ## Project-level agents
@@ -104,13 +114,16 @@ Ship's planner and executor can be replaced per-project. This lets you encode pr
 ### How it works
 
 1. Ship reads `.ship.yaml` from the repo root
-2. If `agents.planner` or `agents.executor` points to a file that exists, Ship uses it
-3. Otherwise, Ship uses its built-in fallback skills
+2. The orchestrator passes the available executors list to the planner
+3. The planner assigns the best-fit executor per PR based on `match` descriptions, not agent names
+4. During execution, Ship loads the assigned agent for each PR
+5. If no agent matches, Ship uses its built-in fallback skills
 
 ### Writing a planner
 
 A planner is a markdown file with instructions for breaking work into PRs. It must:
 - Read `ship-state.md` (requirements + repo context)
+- Read the available executors list and assign one per PR
 - Write `ship-plan.md` following the [plan schema](skills/ship/references/contracts.md)
 
 Example (`.ship/plan.md`):

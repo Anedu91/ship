@@ -67,6 +67,7 @@ Created by the planner. Consumed by the executor, `ship-stack`, and `ship-push`.
 
 ### PR 1: <title>
 - Branch: `<prefix>/<short-name>`
+- Executor: <path to executor agent, or "default" for built-in>
 - Description: <what this PR does and why>
 - Status: <pending | in-progress | done | failed:<reason>>
 - Files:
@@ -78,6 +79,7 @@ Created by the planner. Consumed by the executor, `ship-stack`, and `ship-push`.
 
 ### PR 2: <title>
 - Branch: `<prefix>/<short-name>`
+- Executor: <path to executor agent, or "default" for built-in>
 - Description: <what this PR does and why>
 - Status: pending
 - Depends on: PR 1
@@ -123,6 +125,12 @@ The planner MUST provide enough detail that the executor can work mechanically:
 
 The orchestrator extracts one PR section from `ship-plan.md` and passes it to the executor. The executor receives the full PR section (everything under `### PR N: <title>`) plus the Configuration section for validation commands.
 
+## PR Blueprint (executor assignment)
+
+The planner assigns an executor to each PR via the `Executor:` field. The orchestrator reads this field and loads the corresponding agent file. If set to `"default"`, the built-in `ship-execute` skill is used.
+
+The planner picks executors by matching each PR's content against the `match` descriptions in `.ship.yaml`. Selection is based on what the agent **can do** (its `match` field), not its name.
+
 ## .ship.yaml — Project Configuration
 
 Optional file in the target repo root. Defines project-level overrides.
@@ -143,15 +151,51 @@ validate:
 
 # Project-level agents (optional — falls back to ship built-ins)
 agents:
-  planner: ".ship/plan.md"
-  executor: ".ship/execute.md"
+  # Planners — list of available planners. First match wins.
+  # If omitted or empty, uses built-in ship-plan.
+  planners:
+    - path: ".ship/plan.md"
+      match: "default"
+
+  # Executors — list of available executors with capability descriptions.
+  # The planner reads these and assigns the best fit per PR.
+  # If omitted or empty, uses built-in ship-execute for all PRs.
+  executors:
+    - path: ".agents/backend-engineer.md"
+      match: "Python, FastAPI, SQLAlchemy, Pydantic, scrapers, CLI tools"
+    - path: ".agents/infra-engineer.md"
+      match: "Terraform, Docker, CI/CD, deployment, infrastructure"
+    - path: ".agents/frontend-engineer.md"
+      match: "React, TypeScript, UI components, styling"
 ```
+
+### Agent selection flow
+
+1. The orchestrator reads all entries from `agents.executors` (and `agents.planners`)
+2. The orchestrator passes the available agents list to the planner
+3. The planner assigns an executor per PR by matching the PR's work against `match` descriptions
+4. The planner writes the chosen agent's `path` into each PR's `Executor:` field
+5. During execution, the orchestrator reads the `Executor:` field and loads that agent
+
+If no executor matches or the field is `"default"`, the built-in `ship-execute` skill is used.
+
+### Single-agent shorthand
+
+For projects with just one custom executor or planner, use the shorthand:
+
+```yaml
+agents:
+  executor: ".agents/backend-engineer.md"
+  planner: ".ship/plan.md"
+```
+
+This is equivalent to a single-entry list with `match: "default"`. The planner will use this executor for all PRs.
 
 ### Project-level agent contract
 
 Project-level planner and executor files are markdown instruction sets. They MUST:
 
-1. **Planner**: Read `ship-state.md`, write `ship-plan.md` following the schema above exactly.
+1. **Planner**: Read `ship-state.md` and the available agents list. Write `ship-plan.md` following the schema above exactly, including an `Executor:` field per PR.
 2. **Executor**: Read the PR blueprint section passed to it, implement changes, run validation, update the PR's Status field in `ship-plan.md`.
 
 The schemas above are the contract. Deviation breaks the pipeline.
