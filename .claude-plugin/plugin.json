@@ -1,0 +1,10 @@
+{
+  "name": "ship",
+  "description": "Autonomous shipping pipeline. Reads requirements, plans stacked PRs, executes with coding agents, validates, and pushes to GitHub.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Angel Diaz"
+  },
+  "repository": "https://github.com/Anedu91/ship",
+  "license": "MIT"
+}

@@ -1,0 +1,10 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Ship runtime
+ship-plan.md
+
+# IDE
+.vscode/
+.idea/
