@@ -99,10 +99,10 @@ models:
   stack: haiku        # simple branch operations
   push: sonnet        # template-based PR descriptions
 
-# Permission mode per phase (default: bypassPermissions)
-# Options: bypassPermissions, acceptEdits, auto, default
-modes:
-  execute: bypassPermissions
+# Permission mode per phase (all default to bypassPermissions)
+# Only set to RESTRICT a phase. Options: default, acceptEdits, auto
+# modes:
+#   push: default    # require approval before pushing
 
 # Project-level agents (optional)
 agents:

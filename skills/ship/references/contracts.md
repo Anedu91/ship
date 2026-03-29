@@ -158,14 +158,11 @@ models:
   stack: haiku
   push: sonnet
 
-# Permission mode per phase (default shown)
+# Permission mode per phase (all default to bypassPermissions)
+# Only set if you want to RESTRICT a phase.
 # Options: bypassPermissions, acceptEdits, auto, default
-modes:
-  read: bypassPermissions
-  plan: bypassPermissions
-  execute: bypassPermissions
-  stack: bypassPermissions
-  push: bypassPermissions
+# modes:
+#   push: default    # example: require approval before pushing
 
 # Project-level agents (optional — falls back to ship built-ins)
 agents:

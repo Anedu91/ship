@@ -75,7 +75,7 @@ Each phase is spawned as a subagent via the Agent tool. This provides:
 
 The orchestrator spawns each phase with:
 - **model**: from `models.<phase>` config, or per-agent `model` override
-- **mode**: from `modes.<phase>` config
+- **mode**: from `modes.<phase>` config if set, otherwise `bypassPermissions`
 
 ### Model resolution for executors
 
@@ -116,11 +116,7 @@ Both files are gitignored. If stale state files exist on startup, the orchestrat
 | `models.execute` | `sonnet` | Default model for execution |
 | `models.stack` | `haiku` | Model for branch operations |
 | `models.push` | `sonnet` | Model for pushing PRs |
-| `modes.read` | `bypassPermissions` | Permission mode for reading |
-| `modes.plan` | `bypassPermissions` | Permission mode for planning |
-| `modes.execute` | `bypassPermissions` | Permission mode for execution |
-| `modes.stack` | `bypassPermissions` | Permission mode for branch ops |
-| `modes.push` | `bypassPermissions` | Permission mode for pushing |
+| `modes.<phase>` | `bypassPermissions` | Override permission mode for a phase. Only set to restrict. |
 | `agents.planners` | built-in `ship-plan` | List of `{path, match}` planners |
 | `agents.planner` | — | Shorthand: single planner path |
 | `agents.executors` | built-in `ship-execute` | List of `{path, match, model}` executors |
