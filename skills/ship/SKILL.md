@@ -1,159 +1,152 @@
 ---
 name: ship
-description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes with subagents, validates (mypy/ruff/tests), and pushes to GitHub with detailed PR descriptions."
+description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes each PR sequentially, validates, and pushes to GitHub. Invoke with /ship:ship <requirements>."
+argument-hint: <requirements — file path, GitHub issue URL, or inline text>
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(cat:*), Bash(rm:*), Agent
 ---
 
 # /ship — Autonomous Shipping Pipeline
 
-You are an autonomous shipping orchestrator. When invoked, you execute a full development pipeline from requirements to pushed PRs. You do NOT ask for confirmation between phases — you run the entire pipeline end-to-end.
+Orchestrate a full development pipeline from requirements to pushed PRs. Run the entire pipeline end-to-end without asking for confirmation between phases.
 
-## Input
+Each phase is spawned as a subagent with configurable model and permission mode.
 
-`$ARGUMENTS` is either:
-- A path to a requirements file (markdown, yaml, or text)
-- A GitHub issue URL
-- Inline text describing what to build
+`$ARGUMENTS` is the requirements input (file path, GitHub issue URL, or inline text).
 
-## Pipeline
+## Phase 0: Initialize
 
-### Phase 1: Read & Understand Requirements
+1. Check for stale state files (`ship-state.md`, `ship-plan.md`) in the repo root. If found, ask whether to resume the previous run or start fresh. If starting fresh, delete them.
 
-1. If `$ARGUMENTS` is a file path, read it completely
-2. If it's a GitHub issue URL, fetch the issue body and comments using `gh issue view <number> --json body,title,comments`
-3. Identify:
-   - **Goal**: what needs to be built
-   - **Constraints**: tech stack, patterns, conventions
-   - **Acceptance criteria**: how to know it's done
-   - **Existing code**: read relevant files in the repo to understand current architecture
+2. Load configuration from `.ship.yaml` in the repo root (if exists). Extract:
+   - `maxLinesPerPR` (default: 250)
+   - `branchPrefix` (default: `"ship/"`)
+   - `validate` (default: auto-detect)
+   - `agents.planners` — list of `{path, match}` entries (or single `agents.planner` shorthand)
+   - `agents.executors` — list of `{path, match, model}` entries (or single `agents.executor` shorthand)
+   - `models` — model per phase (defaults below)
+   - `modes` — permission mode per phase (defaults below)
 
-### Phase 2: Plan Stacked PRs
+   Normalize shorthand: if `agents.planner` is a string, treat as `[{path: <value>, match: "default"}]`. Same for `agents.executor`.
 
-Break the work into **sequential, stacked PRs** where each PR:
-- Has **less than 250 lines of code changed** (hard limit)
-- Is a **complete, working increment** (tests pass independently)
-- Builds on top of the previous PR
-- Has a clear, single responsibility
+3. Apply defaults for any missing config. If `.ship.yaml` doesn't exist, or any field is missing, use these defaults:
 
-Write the plan to `ship-plan.md` in the repo root with this structure:
-
-```markdown
-# Ship Plan
-
-## Summary
-<one paragraph describing the full feature>
-
-## Stack
-
-### PR 1: <title>
-- Branch: `ship/<short-name>`
-- Description: <what this PR does>
-- Files to create/modify: <list>
-- Estimated lines: <number>
-
-### PR 2: <title>
-- Branch: `ship/<short-name>`
-- Description: <what this PR does>
-- Files to create/modify: <list>
-- Estimated lines: <number>
-- Depends on: PR 1
-
-...
-```
-
-Rules for planning:
-- Prefer more small PRs over fewer large ones
-- Infrastructure/types/config first, then logic, then tests
-- Each PR must leave the codebase in a valid state
-- If a single logical change exceeds 250 lines, split it further
-
-### Phase 3: Execute Each PR
-
-For **each PR in the plan**, in order:
-
-1. Create a new graphite branch:
-   ```bash
-   gt create -am "feat: <PR title>"
+   ```yaml
+   maxLinesPerPR: 250
+   branchPrefix: "ship/"
+   validate: # auto-detect
+   models:
+     read: sonnet
+     plan: opus
+     execute: sonnet
+     stack: haiku
+     push: sonnet
+   agents:
+     planners: []   # uses built-in ship-plan
+     executors: []  # uses built-in ship-execute
    ```
 
-2. Implement the changes described in the plan. Use subagents for parallel work if the PR touches independent files.
+   All phases run with `bypassPermissions` by default. To restrict a specific phase, set `modes.<phase>` (e.g., `modes.push: default` to require approval before pushing).
 
-3. After implementation, run the project's validation suite. Look for these in order and run whichever exist:
-   - `pyproject.toml` → `uv run ruff check . && uv run ruff format --check . && uv run mypy src/ && uv run pytest`
-   - `package.json` → `npm run lint && npm run typecheck && npm test`
-   - `Makefile` → `make check` or `make test`
-   - If none found, at minimum run any linter/formatter config detected
+   Merge, don't replace: if `.ship.yaml` only sets `models.plan: sonnet`, all other models keep their defaults.
 
-4. If validation fails:
-   - Fix the issues
-   - Re-run validation
-   - Repeat up to 3 times
-   - If still failing after 3 attempts, document the failures in the PR description and continue
+## Phase 1: Read Requirements
 
-5. Stage and commit all changes:
-   ```bash
-   git add -A
-   git commit --amend -m "feat: <PR title>"
-   ```
+Spawn an Agent subagent:
+- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-read/SKILL.md` and follow its instructions. Input: `$ARGUMENTS`
+- **Model**: `models.read` (default: `sonnet`)
+- **Mode**: `modes.read` if set, otherwise `bypassPermissions`
 
-### Phase 4: Push & Create PRs
+Result: `ship-state.md` exists in the repo root.
 
-After ALL PRs in the stack are implemented and validated:
+## Phase 2: Plan
 
-1. Push the entire stack to GitHub:
-   ```bash
-   gt submit --publish
-   ```
+Discover the planner:
 
-2. For each PR, ensure the GitHub PR body contains:
+1. If `agents.planners` has entries and the first matching file exists:
+   → The planner prompt is: read that file and follow its instructions.
+2. Otherwise:
+   → The planner prompt is: read `${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md` and follow its instructions.
 
-   ```markdown
-   ## What
-   <Clear description of what this PR does>
+Spawn an Agent subagent:
+- **Prompt**: The planner prompt above, plus: "Here are the available executors: `<list from agents.executors with path, match, and model>`". Include `ship-state.md` contents.
+- **Model**: `models.plan` (default: `opus`)
+- **Mode**: `modes.plan` if set, otherwise `bypassPermissions`
 
-   ## Why
-   <Why this change is needed, referencing the original requirements>
+Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending` and an `Executor:` assignment.
 
-   ## How
-   <Brief explanation of the implementation approach>
+**Validate the plan**: Verify `ship-plan.md` has a `## Stack` section and each PR has Branch, Executor, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
 
-   ## Changes
-   - <file>: <what changed and why>
-   - <file>: <what changed and why>
+## Phase 3: Execute Stack
 
-   ## Validation
-   - [ ] ruff check passes
-   - [ ] ruff format passes
-   - [ ] mypy passes
-   - [ ] tests pass
+For each PR in `ship-plan.md`, in order:
 
-   ## Stack
-   This is PR X/N in the stack for: <feature name>
-   ```
+### 3a. Create Branch
 
-### Phase 5: Report
+Spawn an Agent subagent:
+- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-stack/SKILL.md` and follow its instructions. Create branch `<branch name>` with message `"feat: <PR title>"`.
+- **Model**: `models.stack` (default: `haiku`)
+- **Mode**: `modes.stack` if set, otherwise `bypassPermissions`
 
-After all PRs are pushed, output a summary:
+### 3b. Execute PR
+
+Update the PR's status in `ship-plan.md` to `in-progress`.
+
+Discover the executor from the PR's `Executor:` field:
+
+1. If `Executor:` is a path (not `"default"`) AND the file exists:
+   → The executor prompt is: read that file and follow its instructions with this PR's blueprint.
+2. Otherwise:
+   → The executor prompt is: read `${CLAUDE_PLUGIN_ROOT}/skills/ship-execute/SKILL.md` and follow its instructions.
+
+Resolve the model for this executor:
+1. If the PR's executor has a `model` override in `agents.executors`, use that.
+2. Otherwise, use `models.execute` (default: `sonnet`).
+
+Spawn an Agent subagent:
+- **Prompt**: The executor prompt above, plus the full PR blueprint section and Configuration section (validation commands).
+- **Model**: resolved model above
+- **Mode**: `modes.execute` if set, otherwise `bypassPermissions`
+
+Result: PR is implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
+
+### 3c. Continue
+
+If the PR failed, log the failure but continue to the next PR. Do not abort the stack.
+
+Repeat 3a-3c for every PR in the plan.
+
+## Phase 4: Push
+
+Spawn an Agent subagent:
+- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions. The plan is in `ship-plan.md`.
+- **Model**: `models.push` (default: `sonnet`)
+- **Mode**: `modes.push` if set, otherwise `bypassPermissions`
+
+Result: Stack is pushed to GitHub. Each PR has a detailed description.
+
+## Phase 5: Report
+
+Output a summary (the orchestrator does this directly, no subagent needed):
 
 ```
-## Ship Complete 🚀
+## Ship Complete
 
-Feature: <name>
+Feature: <name from plan Summary>
 PRs created: <count>
-Total lines changed: <number>
+Total lines changed: <sum of estimated lines>
 
 Stack:
-1. <PR title> — <github PR url> (<lines> lines)
-2. <PR title> — <github PR url> (<lines> lines)
+1. <PR title> — <GitHub PR URL> (<lines> lines) [<status>]
+2. <PR title> — <GitHub PR URL> (<lines> lines) [<status>]
 ...
 
-Validation: <all passed | X failures documented>
+Validation: <all passed | N failures documented>
 ```
 
-## Important Rules
+Clean up: delete `ship-state.md` and `ship-plan.md` from the repo root.
 
-- **Never exceed 250 lines per PR.** If you're about to, split further.
-- **Every PR must independently pass validation.** Don't break the stack.
-- **Use graphite (`gt`) for all branch operations.** Not raw git branching.
-- **Read the existing codebase first.** Match existing patterns, naming, and style.
-- **Don't modify files outside the plan** unless necessary for the PR to work.
-- **Clean up `ship-plan.md`** after successful completion (delete it).
+## Additional Resources
+
+For data contracts and schemas, consult:
+- **`references/contracts.md`** — ship-state.md and ship-plan.md schemas, project-level agent contract
+- **`references/pipeline-overview.md`** — full architecture, delegation logic, configuration reference, project-level agent authoring guide

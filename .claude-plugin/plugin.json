@@ -1,10 +1,18 @@
 {
   "name": "ship",
   "description": "Autonomous shipping pipeline. Reads requirements, plans stacked PRs, executes with coding agents, validates, and pushes to GitHub.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Angel Diaz"
   },
   "repository": "https://github.com/Anedu91/ship",
-  "license": "MIT"
+  "license": "MIT",
+  "skills": [
+    "./skills/ship",
+    "./skills/ship-read",
+    "./skills/ship-plan",
+    "./skills/ship-execute",
+    "./skills/ship-stack",
+    "./skills/ship-push"
+  ]
 }
