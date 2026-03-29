@@ -13,13 +13,19 @@ Push the completed stack to GitHub and ensure each PR has a detailed description
 Push the entire stack at once:
 
 ```bash
-gt submit --no-interactive
+gt submit --no-interactive --publish
 ```
 
-If `gt submit` fails, try with `--force`:
+This publishes PRs as ready for review (not draft). If `gt submit` fails, try with `--force`:
 
 ```bash
-gt submit --no-interactive --force
+gt submit --no-interactive --publish --force
+```
+
+After submission, mark any draft PRs as ready:
+
+```bash
+gh pr ready <number>
 ```
 
 ## Step 2: Get PR Numbers
