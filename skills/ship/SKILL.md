@@ -28,22 +28,37 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
    Normalize shorthand: if `agents.planner` is a string, treat as `[{path: <value>, match: "default"}]`. Same for `agents.executor`.
 
-### Defaults
+3. Apply defaults for any missing config. If `.ship.yaml` doesn't exist, or any field is missing, use these defaults:
 
-| Phase | Default model | Default mode |
-|-------|--------------|--------------|
-| `read` | `sonnet` | `bypassPermissions` |
-| `plan` | `opus` | `bypassPermissions` |
-| `execute` | `sonnet` | `bypassPermissions` |
-| `stack` | `haiku` | `bypassPermissions` |
-| `push` | `sonnet` | `bypassPermissions` |
+   ```yaml
+   maxLinesPerPR: 250
+   branchPrefix: "ship/"
+   validate: # auto-detect
+   models:
+     read: sonnet
+     plan: opus
+     execute: sonnet
+     stack: haiku
+     push: sonnet
+   modes:
+     read: bypassPermissions
+     plan: bypassPermissions
+     execute: bypassPermissions
+     stack: bypassPermissions
+     push: bypassPermissions
+   agents:
+     planners: []   # uses built-in ship-plan
+     executors: []  # uses built-in ship-execute
+   ```
+
+   Merge, don't replace: if `.ship.yaml` only sets `models.plan: sonnet`, all other models keep their defaults.
 
 ## Phase 1: Read Requirements
 
 Spawn an Agent subagent:
 - **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-read/SKILL.md` and follow its instructions. Input: `$ARGUMENTS`
-- **Model**: `models.read` from config
-- **Mode**: `modes.read` from config
+- **Model**: `models.read` (default: `sonnet`)
+- **Mode**: `modes.read` (default: `bypassPermissions`)
 
 Result: `ship-state.md` exists in the repo root.
 
@@ -58,8 +73,8 @@ Discover the planner:
 
 Spawn an Agent subagent:
 - **Prompt**: The planner prompt above, plus: "Here are the available executors: `<list from agents.executors with path, match, and model>`". Include `ship-state.md` contents.
-- **Model**: `models.plan` from config (default: `opus`)
-- **Mode**: `modes.plan` from config
+- **Model**: `models.plan` (default: `opus`)
+- **Mode**: `modes.plan` (default: `bypassPermissions`)
 
 Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending` and an `Executor:` assignment.
 
@@ -73,8 +88,8 @@ For each PR in `ship-plan.md`, in order:
 
 Spawn an Agent subagent:
 - **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-stack/SKILL.md` and follow its instructions. Create branch `<branch name>` with message `"feat: <PR title>"`.
-- **Model**: `models.stack` from config (default: `haiku`)
-- **Mode**: `modes.stack` from config
+- **Model**: `models.stack` (default: `haiku`)
+- **Mode**: `modes.stack` (default: `bypassPermissions`)
 
 ### 3b. Execute PR
 
@@ -89,12 +104,12 @@ Discover the executor from the PR's `Executor:` field:
 
 Resolve the model for this executor:
 1. If the PR's executor has a `model` override in `agents.executors`, use that.
-2. Otherwise, use `models.execute` from config.
+2. Otherwise, use `models.execute` (default: `sonnet`).
 
 Spawn an Agent subagent:
 - **Prompt**: The executor prompt above, plus the full PR blueprint section and Configuration section (validation commands).
 - **Model**: resolved model above
-- **Mode**: `modes.execute` from config
+- **Mode**: `modes.execute` (default: `bypassPermissions`)
 
 Result: PR is implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
 
@@ -108,8 +123,8 @@ Repeat 3a-3c for every PR in the plan.
 
 Spawn an Agent subagent:
 - **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions. The plan is in `ship-plan.md`.
-- **Model**: `models.push` from config
-- **Mode**: `modes.push` from config
+- **Model**: `models.push` (default: `sonnet`)
+- **Mode**: `modes.push` (default: `bypassPermissions`)
 
 Result: Stack is pushed to GitHub. Each PR has a detailed description.
 
