@@ -139,6 +139,9 @@ Optional file in the target repo root. Defines project-level overrides.
 # Max lines changed per PR (default: 250)
 maxLinesPerPR: 250
 
+# Max total PRs (default: 7)
+maxPRs: 7
+
 # Branch prefix for ship branches (default: "ship/")
 branchPrefix: "ship/"
 
@@ -155,7 +158,6 @@ models:
   read: sonnet
   plan: opus
   execute: sonnet
-  stack: haiku
   push: sonnet
 
 # Permission mode per phase (all default to bypassPermissions)

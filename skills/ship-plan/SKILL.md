@@ -14,6 +14,7 @@ Read `ship-state.md` from the repo root for requirements, constraints, and repo 
 
 Read `.ship.yaml` from the repo root (if exists) for configuration overrides:
 - `maxLinesPerPR` (default: 250)
+- `maxPRs` (default: 7) — hard cap on total PRs. The orchestrator also passes this value in the prompt.
 - `branchPrefix` (default: `"ship/"`)
 - `validate` (default: auto-detected, already in ship-state.md)
 
@@ -35,18 +36,19 @@ If no executor matches a PR's work, set `Executor: default` (uses built-in ship-
 ## Planning Rules
 
 1. Each PR MUST have less than `maxLinesPerPR` lines changed (hard limit)
-2. Each PR is a complete, working increment — tests pass independently
-3. Each PR has a single, clear responsibility
-4. More small PRs are preferred over fewer large ones
-5. If a single logical change exceeds the line limit, split it further
+2. The total number of PRs MUST NOT exceed `maxPRs` (hard limit, default: 7)
+3. Each PR is a complete, working increment — tests pass independently
+4. Each PR has a single, clear responsibility
+5. **Aim for 3–7 PRs total.** Prefer fewer well-scoped PRs over many tiny ones. Only split further when a single PR would exceed the line limit.
+6. **Bundle implementation with its tests.** Each PR should include the function/module AND its corresponding tests together — never split tests into a separate PR.
+7. If a single logical change exceeds the line limit, split it further
 
 ## Planning Order
 
 Split work following this priority:
 1. **Infrastructure first** — types, interfaces, configuration, database schemas
-2. **Core logic** — business logic, services, utilities
-3. **Integration** — API routes, UI components, wiring
-4. **Tests** — test files, test utilities (unless tests are small enough to include with their PR)
+2. **Core logic + tests** — business logic, services, utilities, each bundled with their tests
+3. **Integration + wiring** — API routes, UI components, glue code that connects the pieces
 
 ## Blueprint Detail
 
