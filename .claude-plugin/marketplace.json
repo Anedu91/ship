@@ -1,0 +1,13 @@
+{
+  "name": "ship",
+  "owner": {
+    "name": "Angel Diaz"
+  },
+  "plugins": [
+    {
+      "name": "ship",
+      "source": "./",
+      "description": "Autonomous shipping pipeline. Reads requirements, plans stacked PRs, executes with coding agents, validates, and pushes to GitHub."
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 name: ship
 description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes each PR sequentially, validates, and pushes to GitHub. Invoke with /ship:ship <requirements>."
 argument-hint: <requirements — file path, GitHub issue URL, or inline text>
+model: sonnet
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(cat:*), Bash(rm:*), Agent
 ---
 
@@ -11,6 +12,8 @@ Orchestrate a full development pipeline from requirements to pushed PRs. Run the
 
 Each phase is spawned as a subagent with configurable model and permission mode.
 
+**CRITICAL**: When spawning every Agent subagent, you MUST pass the `mode` parameter explicitly. Default is `mode: "bypassPermissions"` unless overridden by `modes.<phase>` in the config. Never omit the `mode` parameter — omitting it causes the subagent to prompt the user for permissions, which blocks the pipeline.
+
 `$ARGUMENTS` is the requirements input (file path, GitHub issue URL, or inline text).
 
 ## Phase 0: Initialize
@@ -19,6 +22,7 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
 2. Load configuration from `.ship.yaml` in the repo root (if exists). Extract:
    - `maxLinesPerPR` (default: 250)
+   - `maxPRs` (default: 7) — hard cap on number of PRs the planner can create
    - `branchPrefix` (default: `"ship/"`)
    - `validate` (default: auto-detect)
    - `agents.planners` — list of `{path, match}` entries (or single `agents.planner` shorthand)
@@ -32,13 +36,13 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
    ```yaml
    maxLinesPerPR: 250
+   maxPRs: 7
    branchPrefix: "ship/"
    validate: # auto-detect
    models:
      read: sonnet
      plan: opus
      execute: sonnet
-     stack: haiku
      push: sonnet
    agents:
      planners: []   # uses built-in ship-plan
@@ -53,8 +57,8 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
 Spawn an Agent subagent:
 - **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-read/SKILL.md` and follow its instructions. Input: `$ARGUMENTS`
-- **Model**: `models.read` (default: `sonnet`)
-- **Mode**: `modes.read` if set, otherwise `bypassPermissions`
+- **model**: `models.read` from config (default: `"sonnet"`)
+- **mode**: `modes.read` from config (default: `"bypassPermissions"`)
 
 Result: `ship-state.md` exists in the repo root.
 
@@ -68,9 +72,9 @@ Discover the planner:
    → The planner prompt is: read `${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md` and follow its instructions.
 
 Spawn an Agent subagent:
-- **Prompt**: The planner prompt above, plus: "Here are the available executors: `<list from agents.executors with path, match, and model>`". Include `ship-state.md` contents.
-- **Model**: `models.plan` (default: `opus`)
-- **Mode**: `modes.plan` if set, otherwise `bypassPermissions`
+- **Prompt**: The planner prompt above, plus: "Here are the available executors: `<list from agents.executors with path, match, and model>`. Maximum PRs allowed: `<maxPRs>`." Do NOT include `ship-state.md` contents in the prompt — the planner will read it directly from the repo root.
+- **model**: `models.plan` from config (default: `"opus"`)
+- **mode**: `modes.plan` from config (default: `"bypassPermissions"`)
 
 Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending` and an `Executor:` assignment.
 
@@ -80,14 +84,7 @@ Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status:
 
 For each PR in `ship-plan.md`, in order:
 
-### 3a. Create Branch
-
-Spawn an Agent subagent:
-- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-stack/SKILL.md` and follow its instructions. Create branch `<branch name>` with message `"feat: <PR title>"`.
-- **Model**: `models.stack` (default: `haiku`)
-- **Mode**: `modes.stack` if set, otherwise `bypassPermissions`
-
-### 3b. Execute PR
+### 3a. Execute PR (includes branch creation)
 
 Update the PR's status in `ship-plan.md` to `in-progress`.
 
@@ -103,24 +100,24 @@ Resolve the model for this executor:
 2. Otherwise, use `models.execute` (default: `sonnet`).
 
 Spawn an Agent subagent:
-- **Prompt**: The executor prompt above, plus the full PR blueprint section and Configuration section (validation commands).
-- **Model**: resolved model above
-- **Mode**: `modes.execute` if set, otherwise `bypassPermissions`
+- **Prompt**: The executor prompt above, plus: "First, create the branch by running `gt create <branch name> -m "feat: <PR title>"`. Then implement PR N: `<PR title>`. Read `ship-plan.md` from the repo root for the full blueprint and validation commands." Do NOT include the blueprint contents in the prompt — the executor will read it directly.
+- **model**: resolved model above
+- **mode**: `modes.execute` from config (default: `"bypassPermissions"`)
 
-Result: PR is implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
+Result: Branch created, PR implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
 
-### 3c. Continue
+### 3b. Continue
 
 If the PR failed, log the failure but continue to the next PR. Do not abort the stack.
 
-Repeat 3a-3c for every PR in the plan.
+Repeat 3a-3b for every PR in the plan.
 
 ## Phase 4: Push
 
 Spawn an Agent subagent:
 - **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions. The plan is in `ship-plan.md`.
-- **Model**: `models.push` (default: `sonnet`)
-- **Mode**: `modes.push` if set, otherwise `bypassPermissions`
+- **model**: `models.push` from config (default: `"sonnet"`)
+- **mode**: `modes.push` from config (default: `"bypassPermissions"`)
 
 Result: Stack is pushed to GitHub. Each PR has a detailed description.
 

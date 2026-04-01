@@ -14,11 +14,9 @@ Ship is a thin orchestrator that delegates work to specialized skills. Planning 
   │   └─ fallback: ship-plan skill
   │
   ├─ FOR EACH PR (sequential):
-  │   ├─ ship-stack  (fixed)    → gt create <branch>
-  │   ├─ executor    (dynamic)  → implement blueprint → validate → commit
-  │   │   ├─ planner-assigned: Executor field in PR blueprint
-  │   │   └─ fallback: ship-execute skill
-  │   └─ update ship-plan.md status
+  │   └─ executor    (dynamic)  → gt create branch → implement blueprint → validate → commit
+  │       ├─ planner-assigned: Executor field in PR blueprint
+  │       └─ fallback: ship-execute skill
   │
   ├─ ship-push       (fixed)    → gt submit + PR descriptions
   │
@@ -69,13 +67,13 @@ Project-level agents receive the same inputs and must produce the same outputs a
 
 Each phase is spawned as a subagent via the Agent tool. This provides:
 
-1. **Model control** — use Opus for planning (heavy thinking), Sonnet for execution (mechanical), Haiku for stack ops (lightweight)
-2. **Permission bypass** — subagents run with `bypassPermissions` by default, eliminating approval prompts
-3. **Context isolation** — each phase gets its own context window, preventing overflow on large features
+1. **Model control** — use Opus for planning (heavy thinking), Sonnet for execution (mechanical). The orchestrator itself runs on Sonnet to minimize cost.
+2. **Permission bypass** — subagents run with `bypassPermissions` by default (passed explicitly as `mode` parameter), eliminating approval prompts
+3. **Context isolation** — each phase gets its own context window. Subagents read their own input files (ship-state.md, ship-plan.md) directly instead of receiving content through the orchestrator prompt.
 
 The orchestrator spawns each phase with:
 - **model**: from `models.<phase>` config, or per-agent `model` override
-- **mode**: from `modes.<phase>` config if set, otherwise `bypassPermissions`
+- **mode**: from `modes.<phase>` config, default `"bypassPermissions"`. MUST always be passed explicitly to every Agent call.
 
 ### Model resolution for executors
 
@@ -89,9 +87,9 @@ This lets you run a simple infra agent on Haiku while a complex backend agent us
 
 ## Stacked PRs Are Sequential
 
-Each PR branch is created from the previous PR's branch using Graphite. PR 2 depends on PR 1's code. There is no parallel execution of stacked PRs.
+Each PR branch is created from the previous PR's branch using Graphite (the executor runs `gt create` before implementing). PR 2 depends on PR 1's code. There is no parallel execution of stacked PRs.
 
-The planner does the heavy thinking. The executor follows blueprints mechanically. This means sequential execution is fast — each PR is just implementation + validation, not design.
+The planner does the heavy thinking. The executor follows blueprints mechanically — including branch creation. This means each PR is a single subagent call: create branch → implement → validate → commit.
 
 ## State Files
 
@@ -109,12 +107,12 @@ Both files are gitignored. If stale state files exist on startup, the orchestrat
 | Field | Default | Description |
 |-------|---------|-------------|
 | `maxLinesPerPR` | 250 | Max lines changed per PR |
+| `maxPRs` | 7 | Max total PRs the planner can create |
 | `branchPrefix` | `"ship/"` | Prefix for branch names |
 | `validate` | auto-detected | List of validation commands |
 | `models.read` | `sonnet` | Model for reading requirements |
 | `models.plan` | `opus` | Model for planning (heavy thinking) |
 | `models.execute` | `sonnet` | Default model for execution |
-| `models.stack` | `haiku` | Model for branch operations |
 | `models.push` | `sonnet` | Model for pushing PRs |
 | `modes.<phase>` | `bypassPermissions` | Override permission mode for a phase. Only set to restrict. |
 | `agents.planners` | built-in `ship-plan` | List of `{path, match}` planners |
@@ -161,10 +159,9 @@ The executor MUST:
 `.ship/plan.md`:
 ```markdown
 Break work following this project's layered architecture:
-1. Database models and migrations first
-2. Service layer (business logic)
-3. API routes
-4. Tests for each layer
+1. Database models and migrations (with model tests)
+2. Service layer with business logic (with service tests)
+3. API routes and wiring (with integration tests)
 
 Use SQLAlchemy for models, Pydantic for schemas. Each PR should touch
 at most one layer. Always include type hints.
