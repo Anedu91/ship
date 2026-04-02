@@ -9,7 +9,6 @@
   "license": "MIT",
   "skills": [
     "./skills/ship",
-    "./skills/ship-read",
     "./skills/ship-plan",
     "./skills/ship-execute",
     "./skills/ship-stack",

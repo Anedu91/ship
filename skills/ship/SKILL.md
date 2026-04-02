@@ -3,14 +3,14 @@ name: ship
 description: "Autonomous shipping pipeline: reads requirements, plans stacked PRs (<250 lines each), executes each PR sequentially, validates, and pushes to GitHub. Invoke with /ship:ship <requirements>."
 argument-hint: <requirements — file path, GitHub issue URL, or inline text>
 model: sonnet
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(gt:*), Bash(gh:*), Bash(cat:*), Bash(rm:*), Agent
+allowed-tools: Read, Glob, Grep, Agent
 ---
 
 # /ship — Autonomous Shipping Pipeline
 
 Orchestrate a full development pipeline from requirements to pushed PRs. Run the entire pipeline end-to-end without asking for confirmation between phases.
 
-Each phase is spawned as a subagent with configurable model and permission mode.
+The orchestrator does NOT execute any bash commands. It only reads files, spawns subagents, and reports results.
 
 **CRITICAL**: When spawning every Agent subagent, you MUST pass the `mode` parameter explicitly. Default is `mode: "bypassPermissions"` unless overridden by `modes.<phase>` in the config. Never omit the `mode` parameter — omitting it causes the subagent to prompt the user for permissions, which blocks the pipeline.
 
@@ -18,7 +18,7 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
 ## Phase 0: Initialize
 
-1. Check for stale state files (`ship-state.md`, `ship-plan.md`) in the repo root. If found, ask whether to resume the previous run or start fresh. If starting fresh, delete them.
+1. Check for stale `ship-plan.md` or `ship-state.md` in the repo root. If found, ask whether to resume the previous run or start fresh. If starting fresh, tell the first subagent to delete them.
 
 2. Load configuration from `.ship.yaml` in the repo root (if exists). Extract:
    - `maxLinesPerPR` (default: 250)
@@ -32,7 +32,7 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
    Normalize shorthand: if `agents.planner` is a string, treat as `[{path: <value>, match: "default"}]`. Same for `agents.executor`.
 
-3. Apply defaults for any missing config. If `.ship.yaml` doesn't exist, or any field is missing, use these defaults:
+3. Apply defaults for any missing config:
 
    ```yaml
    maxLinesPerPR: 250
@@ -40,7 +40,6 @@ Each phase is spawned as a subagent with configurable model and permission mode.
    branchPrefix: "ship/"
    validate: # auto-detect
    models:
-     read: sonnet
      plan: opus
      execute: sonnet
      push: sonnet
@@ -53,16 +52,9 @@ Each phase is spawned as a subagent with configurable model and permission mode.
 
    Merge, don't replace: if `.ship.yaml` only sets `models.plan: sonnet`, all other models keep their defaults.
 
-## Phase 1: Read Requirements
+## Phase 1: Plan
 
-Spawn an Agent subagent:
-- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-read/SKILL.md` and follow its instructions. Input: `$ARGUMENTS`
-- **model**: `models.read` from config (default: `"sonnet"`)
-- **mode**: `modes.read` from config (default: `"bypassPermissions"`)
-
-Result: `ship-state.md` exists in the repo root.
-
-## Phase 2: Plan
+The planner reads requirements, scans the repo, and produces the full PR blueprint in a single step.
 
 Discover the planner:
 
@@ -72,21 +64,21 @@ Discover the planner:
    → The planner prompt is: read `${CLAUDE_PLUGIN_ROOT}/skills/ship-plan/SKILL.md` and follow its instructions.
 
 Spawn an Agent subagent:
-- **Prompt**: The planner prompt above, plus: "Here are the available executors: `<list from agents.executors with path, match, and model>`. Maximum PRs allowed: `<maxPRs>`." Do NOT include `ship-state.md` contents in the prompt — the planner will read it directly from the repo root.
+- **Prompt**: The planner prompt above, plus: "Requirements input: `$ARGUMENTS`. Here are the available executors: `<list from agents.executors with path, match, and model>`. Maximum PRs allowed: `<maxPRs>`. Max lines per PR: `<maxLinesPerPR>`. Branch prefix: `<branchPrefix>`."
 - **model**: `models.plan` from config (default: `"opus"`)
 - **mode**: `modes.plan` from config (default: `"bypassPermissions"`)
 
-Result: `ship-plan.md` exists with detailed PR blueprints. All PRs have `Status: pending` and an `Executor:` assignment.
+Result: The planner returns the full plan as structured text in its response. The orchestrator captures this output.
 
-**Validate the plan**: Verify `ship-plan.md` has a `## Stack` section and each PR has Branch, Executor, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
+**Parse the plan**: Extract each PR section from the planner's output. Each PR should have: title, branch name, executor assignment, description, file operations, estimated lines, and validation commands. Store these in memory for Phase 2.
 
-## Phase 3: Execute Stack
+**Validate the plan**: Verify the output has a `## Stack` section and each PR has Branch, Executor, Description, Files, and Estimated lines fields. If malformed, re-run the planner.
 
-For each PR in `ship-plan.md`, in order:
+## Phase 2: Execute Stack
 
-### 3a. Execute PR (includes branch creation)
+For each PR extracted from the plan, in order:
 
-Update the PR's status in `ship-plan.md` to `in-progress`.
+### 2a. Execute PR
 
 Discover the executor from the PR's `Executor:` field:
 
@@ -100,28 +92,57 @@ Resolve the model for this executor:
 2. Otherwise, use `models.execute` (default: `sonnet`).
 
 Spawn an Agent subagent:
-- **Prompt**: The executor prompt above, plus: "First, create the branch by running `gt create <branch name> -m "feat: <PR title>"`. Then implement PR N: `<PR title>`. Read `ship-plan.md` from the repo root for the full blueprint and validation commands." Do NOT include the blueprint contents in the prompt — the executor will read it directly.
+- **Prompt**: The executor prompt above, plus the **full PR blueprint inline**:
+  ```
+  Implement this PR:
+
+  Branch: <branch name>
+  Title: <PR title>
+  Description: <description>
+  Files:
+    - <file operations from the plan>
+  Validation commands:
+    - <command 1>
+    - <command 2>
+  ```
+  Do NOT reference ship-plan.md — the executor receives everything it needs in this prompt.
 - **model**: resolved model above
 - **mode**: `modes.execute` from config (default: `"bypassPermissions"`)
 
-Result: Branch created, PR implemented, validated, committed. Status updated to `done` or `failed:<reason>`.
+Result: Branch created, PR implemented, validated, committed. The executor returns success or failure with details.
 
-### 3b. Continue
+### 2b. Record & Continue
 
-If the PR failed, log the failure but continue to the next PR. Do not abort the stack.
+Record the result (success/failure + details) for the final report. If the PR failed, log the failure but continue to the next PR. Do not abort the stack.
 
-Repeat 3a-3b for every PR in the plan.
+Repeat 2a-2b for every PR in the plan.
 
-## Phase 4: Push
+## Phase 3: Push
+
+Delegate pushing to the ship-push subagent.
 
 Spawn an Agent subagent:
-- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions. The plan is in `ship-plan.md`.
+- **Prompt**: Read `${CLAUDE_PLUGIN_ROOT}/skills/ship-push/SKILL.md` and follow its instructions. Then provide inline:
+  ```
+  Feature summary: <from plan Summary>
+  Total PRs: <count>
+
+  PR 1: <title>
+  - Branch: <branch name>
+  - Description: <description>
+  - Files: <file operations summary>
+  - Estimated lines: <number>
+  - Validation: <pass or fail with reason>
+
+  PR 2: <title>
+  ...
+  ```
 - **model**: `models.push` from config (default: `"sonnet"`)
 - **mode**: `modes.push` from config (default: `"bypassPermissions"`)
 
-Result: Stack is pushed to GitHub. Each PR has a detailed description.
+Result: The push agent returns the list of PRs with their GitHub URLs and status.
 
-## Phase 5: Report
+## Phase 4: Report
 
 Output a summary (the orchestrator does this directly, no subagent needed):
 
@@ -140,10 +161,8 @@ Stack:
 Validation: <all passed | N failures documented>
 ```
 
-Clean up: delete `ship-state.md` and `ship-plan.md` from the repo root.
-
 ## Additional Resources
 
-For data contracts and schemas, consult:
-- **`references/contracts.md`** — ship-state.md and ship-plan.md schemas, project-level agent contract
-- **`references/pipeline-overview.md`** — full architecture, delegation logic, configuration reference, project-level agent authoring guide
+For data contracts and the PR blueprint schema, consult:
+- **`references/contracts.md`** — PR blueprint schema, project-level agent contract
+- **`references/pipeline-overview.md`** — full architecture, delegation logic, configuration reference
