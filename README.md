@@ -7,38 +7,45 @@ Autonomous shipping pipeline for AI coding agents. One command: requirements in,
 ```
 /ship <requirements>
    │
-   ├── 1. Read & understand requirements
-   ├── 2. Plan stacked PRs (<250 lines each)
-   ├── 3. Execute each PR sequentially
-   ├── 4. Validate (linters, types, tests)
-   ├── 5. Push stacked PRs to GitHub
-   └── 6. Report summary
+   ├── 1. Plan: read requirements + scan repo + blueprint PRs
+   ├── 2. Execute each PR sequentially (branch, implement, validate, commit)
+   ├── 3. Push stacked PRs to GitHub + create PR descriptions
+   ├── 4. Report summary
+   └── Done
 ```
 
 ## Architecture
 
-Ship is a thin orchestrator that delegates to specialized skills. Planning and execution are **dynamically delegated** — projects can provide their own planner and executor.
+Ship is a pure orchestrator that delegates all work to specialized subagents. It executes zero bash commands — only reads config, spawns agents, and reports results. Planning and execution are **dynamically delegated** — projects can provide their own planner and executor. No shared state files — data is passed inline between phases.
 
 ```
 /ship <requirements>
   │
-  ├─ ship-read       (fixed)    → parse requirements
-  ├─ planner         (dynamic)  → plan PRs (project or fallback)
-  ├─ FOR EACH PR:
-  │   ├─ ship-stack  (fixed)    → create graphite branch
-  │   └─ executor    (dynamic)  → implement + validate (project or fallback)
-  ├─ ship-push       (fixed)    → push stack + PR descriptions
-  └─ report + cleanup
+  ├─ Phase 1: Plan   (1 subagent)
+  │   ├─ Read requirements + scan repo
+  │   └─ Output PR blueprints as text
+  │
+  ├─ Phase 2: Execute (N subagents, sequential)
+  │   └─ FOR EACH PR:
+  │       ├─ Receives blueprint inline from orchestrator
+  │       └─ gt create branch → implement → validate → commit
+  │
+  ├─ Phase 3: Push   (1 subagent)
+  │   ├─ Receives feature summary + PR list inline
+  │   └─ gt submit + gh pr edit with descriptions
+  │
+  └─ Phase 4: Report (orchestrator directly, text only)
 ```
+
+**Total subagents: N + 2** (1 planner + N executors + 1 pusher)
 
 | Skill | Role | Dynamic? |
 |-------|------|----------|
-| `ship` | Orchestrator — runs the pipeline | No |
-| `ship-read` | Parse requirements from issues, files, or text | No |
-| `ship-plan` | Fallback planner — break work into PR blueprints | Replaceable |
-| `ship-execute` | Fallback executor — implement a single PR | Replaceable |
-| `ship-stack` | Graphite branch management | No |
-| `ship-push` | Push stack and create PR descriptions | No |
+| `ship` | Orchestrator — pure delegation, zero commands | No |
+| `ship-plan` | Planner — read requirements + blueprint PRs | Replaceable |
+| `ship-execute` | Executor — implement a single PR | Replaceable |
+| `ship-push` | Pusher — push stack + create PR descriptions | No |
+| `ship-stack` | Graphite branch management (reference) | No |
 
 ## Supported tools
 
@@ -93,11 +100,9 @@ validate:
 
 # Model per phase (options: opus, sonnet, haiku)
 models:
-  read: sonnet        # lightweight parsing
   plan: opus          # heavy thinking, architecture decisions
   execute: sonnet     # mechanical, follow the blueprint
-  stack: haiku        # simple branch operations
-  push: sonnet        # template-based PR descriptions
+  push: sonnet        # push stack + PR descriptions
 
 # Permission mode per phase (all default to bypassPermissions)
 # Only set to RESTRICT a phase. Options: default, acceptEdits, auto
@@ -131,16 +136,17 @@ Ship's planner and executor can be replaced per-project. This lets you encode pr
 
 1. Ship reads `.ship.yaml` from the repo root
 2. The orchestrator passes the available executors list to the planner
-3. The planner assigns the best-fit executor per PR based on `match` descriptions, not agent names
+3. The planner assigns the best-fit executor per PR based on `match` descriptions
 4. During execution, Ship loads the assigned agent for each PR
 5. If no agent matches, Ship uses its built-in fallback skills
 
 ### Writing a planner
 
 A planner is a markdown file with instructions for breaking work into PRs. It must:
-- Read `ship-state.md` (requirements + repo context)
-- Read the available executors list and assign one per PR
-- Write `ship-plan.md` following the [plan schema](skills/ship/references/contracts.md)
+- Read requirements (provided inline by the orchestrator)
+- Scan the repo for context
+- Output the PR blueprint as structured text (NOT write to a file)
+- Assign executors per PR via the `Executor:` field
 
 Example (`.ship/plan.md`):
 ```markdown
@@ -148,7 +154,7 @@ Break work following this project's layered architecture:
 1. Database models and migrations first
 2. Service layer (business logic)
 3. API routes and middleware
-4. Tests for each layer
+4. Tests bundled with each layer
 
 Use SQLAlchemy for models, Pydantic for schemas.
 Each PR should touch at most one layer.
@@ -157,10 +163,10 @@ Each PR should touch at most one layer.
 
 ### Writing an executor
 
-An executor is a markdown file with instructions for implementing a single PR. It must:
-- Read the PR blueprint it receives
-- Implement, validate, and commit
-- Update the PR status in `ship-plan.md`
+An executor is a markdown file with instructions for implementing a single PR. It receives its blueprint inline from the orchestrator. It must:
+- Implement changes following the blueprint
+- Run validation and fix failures (up to 3 retries)
+- Commit and report success/failure
 
 Example (`.ship/execute.md`):
 ```markdown

@@ -1,16 +1,22 @@
 ---
 name: ship-execute
-description: "This skill should be used as the fallback executor when the ship orchestrator cannot find a project-level executor. Implements a single PR from a ship blueprint mechanically."
+description: "This skill should be used as the fallback executor when the ship orchestrator cannot find a project-level executor. Implements a single PR from an inline blueprint."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(gt:*), Bash(git:*), Bash(uv:*), Bash(npm:*), Bash(make:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*)
 ---
 
 # ship-execute — Fallback Executor
 
-Implement a single PR from its blueprint in `ship-plan.md`.
+Implement a single PR from the blueprint provided in the prompt.
 
 ## Input
 
-The orchestrator provides the PR number, title, and branch name. Read `ship-plan.md` from the repo root for the full PR blueprint (under `### PR N: <title>`) and the Configuration section (validation commands).
+The orchestrator provides everything inline in the prompt:
+- **Branch name** and **PR title**
+- **Description** of what this PR does
+- **File operations** with method-level detail
+- **Validation commands** to run after implementation
+
+You do NOT need to read any state files. Everything you need is in the prompt.
 
 ## Step 0: Create Branch
 
@@ -24,10 +30,10 @@ If the current branch is not tracked by Graphite, track it first: `gt track -p m
 
 ## Implementation Process
 
-1. **Read the blueprint** — read `ship-plan.md` and find the PR section. Understand every file operation specified
+1. **Understand the blueprint** — read the file operations provided in the prompt
 2. **Read existing files** — for `[MODIFY]` operations, read the current file first to understand context
 3. **Implement each file operation**:
-   - `[CREATE]` — create the file with the structure specified in the blueprint
+   - `[CREATE]` — create the file with the structure specified
    - `[MODIFY]` — make exactly the changes described. Do not refactor or "improve" surrounding code
    - `[DELETE]` — remove the file
    - `[RENAME]` — move the file to its new path
@@ -36,12 +42,12 @@ If the current branch is not tracked by Graphite, track it first: `gt track -p m
 ## Implementation Rules
 
 - Implement exactly what the blueprint specifies. Do not add features, refactor unrelated code, or make "improvements" beyond the blueprint.
-- If the blueprint is insufficient to implement (missing critical details), document what's missing in the PR status and continue with best judgment.
+- If the blueprint is insufficient to implement (missing critical details), use best judgment and document assumptions.
 - Do not modify files outside the blueprint unless strictly necessary for the code to compile/run.
 
 ## Validation
 
-After implementation, run the validation commands from the Configuration section:
+After implementation, run the validation commands from the prompt:
 
 ```
 For each validation command:
@@ -64,10 +70,10 @@ git add -A
 git commit --amend -m "feat: <PR title>"
 ```
 
-## Update Status
+## Result
 
-Update the PR's Status field in `ship-plan.md`:
-- If validation passed: `Status: done`
-- If validation failed after retries: `Status: failed:<brief reason>`
+Output whether the PR succeeded or failed:
+- If validation passed: report success
+- If validation failed after retries: report failure with brief reason
 
 Do NOT proceed to the next PR. The orchestrator handles sequencing.

@@ -6,7 +6,16 @@ allowed-tools: Read, Write, Bash(gt:*), Bash(gh:*), Bash(cat:*), Bash(rm:*)
 
 # ship-push — Push Stack & Create PRs
 
-Push the completed stack to GitHub and ensure each PR has a detailed description.
+Push the completed stack to GitHub and create PR descriptions.
+
+## Input
+
+The orchestrator provides everything inline in the prompt:
+- **Feature summary** — one paragraph describing the full feature
+- **PR list** — for each PR: title, branch name, description, file operations summary, estimated lines, validation result (pass/fail)
+- **Total PR count**
+
+You do NOT need to read any state files. Everything you need is in the prompt.
 
 ## Step 1: Submit Stack
 
@@ -16,7 +25,7 @@ Push the entire stack at once:
 gt submit --no-interactive --publish
 ```
 
-This publishes PRs as ready for review (not draft). If `gt submit` fails, try with `--force`:
+If `gt submit` fails, retry with `--force`:
 
 ```bash
 gt submit --no-interactive --publish --force
@@ -30,12 +39,6 @@ gh pr ready <number>
 
 ## Step 2: Get PR Numbers
 
-After submission, get the PR numbers for each branch:
-
-```bash
-gt ls
-```
-
 For each branch in the stack, get its PR number:
 
 ```bash
@@ -44,20 +47,19 @@ gh pr list --head <branch-name> --json number --jq '.[0].number'
 
 ## Step 3: Create PR Descriptions
 
-For each PR in `ship-plan.md`, generate a description using this template:
+For each PR, generate a description using this template:
 
 ```markdown
 ## What
-<PR description from the plan>
+<PR description from the prompt>
 
 ## Why
-<How this PR contributes to the overall feature, referencing the plan's Summary>
+<How this PR contributes to the overall feature, referencing the feature summary>
 
 ## How
-<Implementation approach — summarize the file operations from the blueprint>
+<Implementation approach — summarize the file operations>
 
 ## Changes
-- `<file>`: <what changed and why>
 - `<file>`: <what changed and why>
 
 ## Validation
@@ -65,14 +67,16 @@ For each PR in `ship-plan.md`, generate a description using this template:
 - [x/fail] <validation command 2>
 
 ## Stack
-PR <N>/<total> for: <plan Summary>
+PR <N>/<total> for: <feature summary>
 ```
 
-Update each PR:
+Write each description to a temp file and update the PR:
 
 ```bash
 gh pr edit <number> --body-file /tmp/ship-pr-<N>.md
 ```
+
+Clean up temp files after.
 
 ## Step 4: Return Results
 
